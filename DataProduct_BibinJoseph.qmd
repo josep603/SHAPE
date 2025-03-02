@@ -1,0 +1,398 @@
+---
+title: "Health Disparities in Hennepin County: Uncovering the Impact of Social Determinants"
+author: "Bibin Joseph"
+format: pdf
+geometry: "left=.5in, right=.5in, top=.5in, bottom=.5in"
+fontsize: 14pt
+editor: visual
+documentclass: article
+header-includes:
+  - \usepackage{titlesec}
+  - \titleformat{\section}[hang]{\normalfont\bfseries\normal}{}{1em}{}
+  - \setlength{\parskip}{0pt} 
+---
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# Load necessary libraries
+library(gtsummary)
+library(tidyverse)
+library(viridis)  
+library(plotly)
+library(tidyverse)
+library(viridis)
+library(broom)
+library(knitr)
+library(kableExtra)
+library(gtsummary)
+library(glue)
+library(flextable)
+library(gt)
+
+
+# Set working directory and read data
+setwd("~/Desktop/UMN/Health Equity Competition/Team 19/")
+shape_data <- read_csv("shape_final.csv", show_col_types = FALSE)
+
+# Define the list of variables to include in the new dataset
+selected_variables <- c(
+  # Demographic Characteristics
+  "Race", "REWhiteAny", "Race_Black_AfricanAmerican", "Race_Asian", "Race_AmericanIndian", "Race_NativeHawaiian", "Race_Other",
+  "HouseholdIncome", "Income", "Poverty3gp", "Poverty200plus", "EducationLevel", "Employment", "Insure_Private", 
+  "Insure_Public", "Insure_Medicare", "Insure_Other", "Insure_None", "Gender4", "TransgenderStatus", "AgeGp5",
+  
+  # Health-Related Characteristics
+  "HBP3gp", "HBP_Diagnosed", "Diabet3gp", "Diabetes_Diagnosed", "Asthma_EverDiagnosed", "Asthma_Current",
+  "MentalHealth_Days3gp", "FrequentMentalDistress", "HealthRating", "SelfRatedHealth", "Health_ExcellentVeryGood", 
+  "Health_PoorFair", "FI", "DelayedMedicalCare", "RPC_DoctorClinic", "RPC_ER", "RPC_UrgentCare", 
+  "RPC_DrugstoreClinic", "RPC_NoUsualPlace"
+)
+
+# Create a new dataset with the specified variables from `shape_data`
+data <- shape_data %>%
+  select(any_of(selected_variables))
+
+# Recode and rename variables 
+hennepin_data <- data %>%
+  mutate(
+    Race = case_when(
+      Race == "White" ~ "White",
+      Race == "Asian or Asian American" ~ "Asian American",
+      Race == "American Indian or Alaska Native" ~ "American Indian",
+      Race == "Black or African American" ~ "African American",
+      Race == "Native Hawaiian or Other Pacific Islander" ~ "Pacific Islander",
+      Race == "Hispanic" ~ "Hispanic",
+      TRUE ~ "Unspecified"
+    ),
+    REWhiteAny = ifelse(REWhiteAny == "White", "Yes", "No"),
+    Race_Black_AfricanAmerican = ifelse(Race_Black_AfricanAmerican == "Checked", "Yes", "No"),
+    Race_Asian = ifelse(Race_Asian == "Checked", "Yes", "No"),
+    Race_AmericanIndian = ifelse(Race_AmericanIndian == "Checked", "Yes", "No"),
+    Race_NativeHawaiian = ifelse(Race_NativeHawaiian == "Checked", "Yes", "No"),
+    Race_Other = ifelse(Race_Other == "Checked", "Yes", "No"),
+    
+    # Recode income levels 
+    HouseholdIncome = factor(HouseholdIncome, levels = c(
+      "Less than $13K", "$13-$17K", "$17,001 - $26,000", "$26,001 - $35,000",
+      "$35,001 - $44,000", "$44,001 - $53,000", "$53,001 - $62,000", "$62,001 - $71,000", "$71,001 - $80,000",
+      "$80,001 or more"
+    ), ordered = TRUE),
+    Income = factor(Income, levels = c(
+      "No income or less than $13,000", "$13,001 - $17,000", "$17,001 - $26,000", "$26,001 - $35,000",
+      "$35,001 - $44,000", "$44,001 - $53,000", "$53,001 - $62,000", "$62,001 - $71,000", "$71,001 - $80,000",
+      "$80,001 or more"
+    ), ordered = TRUE),
+    
+    # Recode Poverty status
+    Poverty_Status = factor(Poverty3gp, levels = c(1, 2, 3), labels = c("Below Poverty Level", "Near Poverty Level", "Above Poverty Level")),
+    Poverty_200Plus = ifelse(Poverty200plus == 1, "200% or more of poverty", "Below 200% of poverty"),
+    
+    # Education level recoding
+    Education_Level = factor(EducationLevel, levels = c(
+      "Less than high school", "High school graduate or GED", "Some college", 
+      "Bachelor’s degree or higher"
+    ), ordered = TRUE),
+    
+    # Recode insurance status variables
+    Private_Insurance = ifelse(Insure_Private == "Yes", "Yes", "No"),
+    Public_Insurance = ifelse(Insure_Public == "Yes", "Yes", "No"),
+    Medicare_Insurance = ifelse(Insure_Medicare == "Yes", "Yes", "No"),
+    Other_Insurance = ifelse(Insure_Other == "Yes", "Yes", "No"),
+    Uninsured = ifelse(Insure_None == "Yes", "Yes", "No"),
+    
+    # Create an overall `Insurance_Status` variable
+    Insurance_Status = case_when(
+      Uninsured == "Yes" ~ "Uninsured",
+      Private_Insurance == "Yes" ~ "Private Insurance",
+      Public_Insurance == "Yes" ~ "Public Insurance",
+      Medicare_Insurance == "Yes" ~ "Medicare",
+      Other_Insurance == "Yes" ~ "Other Insurance",
+      TRUE ~ "Unspecified"
+    ),
+    
+    # Gender 
+    Gender = recode(Gender4, "Male" = "Male", "Female" = "Female", "Non-binary" = "Non-binary", "Something else" = "Other"),
+    Transgender_Status = ifelse(TransgenderStatus == "Yes", "Yes", "No"),
+    
+    # Age group 
+    Age_Group = factor(AgeGp5, levels = c("Under 18", "18-29", "30-44", "45-64", "65 and older"), ordered = TRUE),
+    
+    # Health conditions
+    Hypertension_Status = factor(HBP3gp, levels = c(1, 2, 3), labels = c("Normal", "Pre-Hypertension", "Hypertension")),
+    Hypertension_Diagnosed = ifelse(HBP_Diagnosed == "Yes", "Yes", "No"),
+    Diabetes_Status = factor(Diabet3gp, levels = c(1, 2, 3), labels = c("No Diabetes", "Pre-Diabetes", "Diabetes")),
+    Diabetes_Diagnosed = ifelse(Diabetes_Diagnosed == "Yes", "Yes", "No"),
+    Asthma_Ever_Diagnosed = ifelse(Asthma_EverDiagnosed == "Yes", "Yes", "No"),
+    Asthma_Current = ifelse(Asthma_Current == "Yes", "Yes", "No"),
+    
+    # Mental health status
+    MentalHealth_Days = factor(MentalHealth_Days3gp, levels = c("0-10 days", "11-20 days", "21-30 days"), ordered = TRUE),
+    Frequent_Mental_Distress = ifelse(FrequentMentalDistress == "Yes", "Yes", "No"),
+    
+    # Self-rated health recoding
+    Self_Rated_Health = factor(HealthRating, levels = c("Poor", "Fair", "Good", "Very Good", "Excellent"), ordered = TRUE),
+    General_Health = factor(SelfRatedHealth, levels = c("Poor", "Fair", "Good", "Very Good", "Excellent"), ordered = TRUE),
+    Health_Excellent_VeryGood = ifelse(Health_ExcellentVeryGood == "Yes", "Yes", "No"),
+    Health_Poor_Fair = ifelse(Health_PoorFair == "Yes", "Yes", "No"),
+    
+    # Food insecurity and delayed medical care
+    Food_Insecurity = ifelse(FI == "Yes", "Yes", "No"),
+    Delayed_Medical_Care = ifelse(DelayedMedicalCare == "Yes", "Yes", "No"),
+    
+    # Usual source of care
+    UsualCare_DoctorClinic = ifelse(RPC_DoctorClinic == "Marked", "Yes", "No"),
+    UsualCare_ER = ifelse(RPC_ER == "Marked", "Yes", "No"),
+    UsualCare_UrgentCare = ifelse(RPC_UrgentCare == "Marked", "Yes", "No"),
+    UsualCare_DrugstoreClinic = ifelse(RPC_DrugstoreClinic == "Marked", "Yes", "No"),
+    No_UsualCare_Place = ifelse(RPC_NoUsualPlace == "Marked", "Yes", "No")
+  ) %>%
+  # Rename columns
+  rename(
+    Any_White_Race = REWhiteAny,
+    African_American_Race = Race_Black_AfricanAmerican,
+    Asian_Race = Race_Asian,
+    American_Indian_Race = Race_AmericanIndian,
+    Pacific_Islander_Race = Race_NativeHawaiian,
+    Other_Race = Race_Other
+  )
+
+```
+
+## **A Closer Look at Health Inequities**
+
+Hennepin County, like many urban areas, grapples with significant health disparities that disproportionately affect certain communities. These disparities are rooted in complex social and economic factors that limit access to quality healthcare, healthy food, and safe environments.
+
+## **Understanding the Data**
+
+To better understand these disparities, an analysis was conducted on the 2022 Survey of the Health of All the Population and the Environment (SHAPE) data. SHAPE is a comprehensive survey that offers a detailed picture of health and well-being in Hennepin County, providing insights into the specific challenges various demographic groups face. Examining this data aims to uncover key factors contributing to health inequities and identify areas where targeted interventions can make the most impact.
+
+## **Key Findings**
+
+### **Self-Rated Health: A Picture of Well-being**
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE,fig.align='center'}
+# Filter out "Unspecified" and NA values for Race and HouseholdIncome
+filtered_data <- hennepin_data %>%
+  filter(
+    Race != "Unspecified", 
+    HouseholdIncome != "Unspecified", 
+    !is.na(HouseholdIncome), 
+    !is.na(Self_Rated_Health)
+  )
+
+# Define custom color palette for Self-Rated Health
+custom_colors <- c(
+  "Excellent" = "#66c2a5",
+  "Very Good" = "#3288bd",
+  "Good" = "#abdda4",
+  "Fair" = "#5e4fa2",
+  "Poor" = "#a6d96a"
+)
+
+# Stacked bar chart: Self-Rated Health by Race and Income Level
+ggplot(filtered_data, aes(x = HouseholdIncome, fill = Self_Rated_Health)) +
+  geom_bar(position = "fill") +
+  facet_wrap(~ Race) +
+  labs(
+    title = "Self-Rated Health by Race and Household Income",
+    x = "",
+    y = "Proportion",
+    fill = "Self Rated Health"
+  ) +
+  scale_fill_manual(values = custom_colors) + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 5, face = "bold"))
+
+
+```
+
+### **Income and Health: A Widening Gap**
+
+The analysis revealed a clear link between income and self-rated health. Individuals with higher incomes tend to report better overall health. This trend is consistent across all racial and ethnic groups, suggesting that economic factors play a significant role in shaping health outcomes.
+
+### **Racial Disparities in Health:**
+
+African American and American Indian populations, particularly those in lower-income brackets, are more likely to experience poorer health outcomes. This highlights the intersection of income and race as key drivers of health disparities. The following stacked bar chart illustrates the variation in self-reported health across income levels within each racial group.
+
+## **Food Insecurity: A Barrier to Health**
+
+### **The Hunger Crisis:**
+
+Food insecurity, or the lack of consistent access to nutritious food, is a significant challenge for many Hennepin County residents. It can lead to a range of health problems, including malnutrition, obesity, and chronic diseases.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE,fig.align='center'}
+# Prepare data for heatmap: Food Insecurity by Race and Income
+food_insecurity_data <- filtered_data %>%
+  group_by(Race, HouseholdIncome) %>%
+  summarize(prop_insecure = mean(Food_Insecurity == "Yes", na.rm = TRUE)) %>%
+  ungroup()
+
+# Create heatmap 
+ggplot(food_insecurity_data, aes(x = HouseholdIncome, y = Race, fill = prop_insecure)) +
+  geom_tile() +
+  scale_fill_gradientn(colors = c("#66c2a5", "#abdda4", "#3288bd", "#5e4fa2")) + 
+  labs(
+    title = "Food Insecurity by Race and Household Income",
+    x = "",
+    y = "Race",
+    fill = "Proportion with \nFood Insecurity"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size = 5,face="bold"))
+
+```
+
+### **Disparities by Race and Income:**
+
+African American and American Indian communities, especially those with lower incomes, face higher rates of food insecurity. The heatmap reveals the prevalence of food insecurity across income levels for each racial group.
+
+## **Food Insecurity Across Age Groups and Races**
+
+### **The Impact of Age and Race:**
+
+Younger age groups, particularly those in lower-income brackets, face higher rates of food insecurity, with African American and Hispanic populations being particularly affected. This stacked bar chart illustrates the intersection of age, race, and income on food insecurity.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE,fig.align='center'}
+# Define custom colors for age groups
+age_colors <- c(
+  "Under 18" = "#66c2a5",
+  "18-29" = "#3288bd",
+  "30-44" = "#abdda4",
+  "45-64" = "#5e4fa2",
+  "65 and older" = "#a6d96a"
+)
+
+# Filter data for valid entries in Age Group, Household Income, Food Insecurity, and Race
+food_insecurity_age <- hennepin_data %>%
+  filter(
+    !is.na(Age_Group), 
+    !is.na(Food_Insecurity), 
+    HouseholdIncome != "Unspecified",
+    Race != "Unspecified",
+    Food_Insecurity != "Unspecified"
+  )
+
+# Stacked bar chart for Food Insecurity by Age Group and Income Level
+ggplot(food_insecurity_age, aes(x = HouseholdIncome, fill = Age_Group)) +
+  geom_bar(position = "fill") +
+  facet_wrap(~ Race) +
+  labs(
+    title = "Food Insecurity by Age Group, Race, and Household Income",
+    x = "Household Income",
+    y = "Proportion",
+    fill = "Age Group"
+  ) +
+  scale_fill_manual(values = age_colors) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size =5 , face ="bold"))
+
+```
+
+## **Healthcare Access and Delayed Care**
+
+### **Barriers to Care:**
+
+Individuals with public insurance or no insurance are more likely to experience delays in medical care. This can lead to worsening health conditions and increased healthcare costs.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE,fig.align='center'}
+# Define custom color palette for Insurance_Status with shades of green and blue
+custom_colors <- c(
+  "Medicare" = "#66c2a5",        # Light green
+  "Other Insurance" = "#3288bd", # Sky blue
+  "Private Insurance" = "#abdda4", # Lighter green
+  "Public Insurance" = "#5e4fa2",  # Dark blue
+  "Uninsured" = "#a6d96a"        # Yellow-green
+)
+
+# Filter out "Unspecified" and remove NAs from relevant columns
+filtered_data <- hennepin_data %>%
+  filter(Race != "Unspecified", Insurance_Status != "Unspecified", !is.na(Delayed_Medical_Care))
+
+# Calculate proportions of Insurance Status within each Race and Delayed Medical Care category
+proportion_data <- filtered_data %>%
+  group_by(Race, Delayed_Medical_Care, Insurance_Status) %>%
+  summarize(count = n(), .groups = "drop") %>%
+  group_by(Race) %>%
+  mutate(proportion = count / sum(count)) %>%
+  ungroup()
+
+# Stacked bar chart: Delayed Medical Care by Race with Insurance Status proportions
+ggplot(proportion_data, aes(x = Delayed_Medical_Care, y = proportion, fill = Insurance_Status)) +
+  geom_bar(stat = "identity", position = "stack") +
+  facet_wrap(~ Race) +
+  labs(
+    title = "Delayed Medical Care by Race and Insurance Status",
+    x = "Delayed Medical Care",
+    y = "Proportion of Total",
+    fill = "Insurance Status"
+  ) +
+  scale_y_continuous(labels = scales::percent_format()) +  # Display y-axis as percentages for clarity
+  scale_fill_manual(values = custom_colors) +  # Apply custom color palette
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,face= "bold"))
+```
+
+**Racial Disparities in Access:**
+
+African American and Hispanic individuals, who are more likely to be uninsured or rely on public insurance, face greater barriers to timely healthcare. This stacked bar chart shows how delayed medical care varies across racial groups with different insurance statuses.
+
+## **Mental Health and Well-being**
+
+### **The Mental Health Crisis:**
+
+Lower-income individuals, especially those from African American and American Indian communities, report higher levels of poor mental health. Economic hardship, coupled with systemic racism and limited access to mental health services, contributes to these disparities.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE,fig.align='center'}
+# Load necessary libraries
+library(ggridges)
+# Filter data to remove NA and "Unspecified" values for Race and HouseholdIncome
+filtered_data <- hennepin_data %>%
+  filter(!is.na(MentalHealth_Days), Race != "Unspecified", HouseholdIncome != "Unspecified")
+
+# Ridgeline Plot: Days of Poor Mental Health by Race within each Household Income
+ggplot(filtered_data, aes(x = as.numeric(MentalHealth_Days), y = Race, fill = ..x..)) +
+  geom_density_ridges_gradient(scale = 3, rel_min_height = 0.01) +
+  scale_fill_gradientn(
+    colors = c("#d0f0fd", "#a2d4ec", "#73b3d8", "#46a1c3", "#1e87a4", "#0e6b82"),
+    name = "Days",
+    labels = scales::label_number(scale = 10)  
+  ) +
+  scale_x_continuous(
+    labels = scales::label_number(scale = 10),  
+    name = "Days of Poor Mental Health"
+  ) +
+  facet_wrap(~ HouseholdIncome) +
+  labs(
+    title = "Poor Mental Health by Race and Household Income",
+    y = "Race"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,face = "bold"),
+        axis.text.y = element_text(size = 5,face = "bold"))
+
+```
+
+### **Visualizing Mental Health Disparities:**
+
+This ridgeline plot provides a clear visual representation of the distribution of poor mental health days across different income levels and racial groups. Higher income groups have less days with mental health crisis
+
+## **Why These Findings Matter**
+
+These findings underscore the pressing need for targeted health interventions addressing social determinants. Disparities in self-rated health, food insecurity, and access to healthcare services point to systemic inequities that disproportionately affect minority and lower-income communities. Mental health disparities, in particular, highlight the intersection of socioeconomic stress and racial disadvantage, necessitating culturally sensitive mental health support services.
+
+The results can inform local policymakers and public health professionals in designing interventions that address these root causes. For instance, programs focusing on food access in low-income neighborhoods or expanding healthcare coverage could mitigate some of the barriers these communities face. By grounding health interventions in an understanding of social determinants, Hennepin County can move towards equitable health outcomes.
+
+## **What Can Be Done?**
+
+Addressing these disparities requires a multi-faceted approach that tackles the root causes of inequality. Here are some potential strategies:
+
+-   **Expand Access to Affordable Healthcare:** Increase access to affordable health insurance and reduce out-of-pocket costs for medical care.
+
+-   **Strengthen Social Safety Nets:** Implement policies that support low-income families, such as expanded food assistance programs and affordable housing initiatives.
+
+-   **Invest in Community-Based Programs:** Support community-based organizations that provide health education, nutrition programs, and mental health services.
+
+-   **Address Systemic Racism:** Work to dismantle systemic racism and promote equity in all aspects of society, including healthcare, education, and employment.
+
+## **A Call to Action**
+
+By understanding the complex interplay of social determinants and health outcomes, we can work towards building a healthier and more equitable Hennepin County. We encourage you to share this information with your community and advocate for policies that prioritize the well-being of all residents.
